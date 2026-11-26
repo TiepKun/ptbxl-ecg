@@ -16,13 +16,4 @@ BANDS = [(0.5, 4), (4, 8), (8, 15), (15, 30), (30, 50)]
 
 def extract_features(X: np.ndarray, chunk: int = 2000) -> np.ndarray:
     """X: (N, C, T) tín hiệu GỐC (chưa chuẩn hóa) -> (N, C * 11)."""
-    feats = []
-    freqs = np.fft.rfftfreq(X.shape[-1], d=1.0 / FS)
-    for i in range(0, len(X), chunk):
-        x = X[i:i + chunk]
-        stats = [x.mean(-1), x.std(-1), x.min(-1), x.max(-1), skew(x, axis=-1), kurtosis(x, axis=-1)]
-        power = np.abs(np.fft.rfft(x - x.mean(-1, keepdims=True), axis=-1)) ** 2 / x.shape[-1]
-        bands = [np.log1p(power[..., (freqs >= lo) & (freqs < hi)].sum(-1)) for lo, hi in BANDS]
-        f = np.stack(stats + bands, axis=-1)  # (n, C, 11)
-        feats.append(f.reshape(len(x), -1))
-    return np.nan_to_num(np.concatenate(feats).astype(np.float32))
+    raise NotImplementedError("TODO [A]: trích 11 đặc trưng cho mỗi chuyển đạo (xem docstring của module)")

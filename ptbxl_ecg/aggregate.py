@@ -14,19 +14,21 @@ import pandas as pd
 from .data import SUPERCLASSES
 
 
-def aggregate(log_csv: str, out_dir: str) -> pd.DataFrame:
-    df = pd.read_csv(log_csv)
-    df = df[df["group"] != "dev"]
-    # nếu cùng (model, leads, aug, seed) chạy nhiều lần thì giữ lần cuối
-    df = df.drop_duplicates(["model", "leads", "aug", "seed"], keep="last")
+def summarize_runs(df: pd.DataFrame) -> pd.DataFrame:
+    """Gộp các lượt chạy thành bảng trung bình ± độ lệch chuẩn theo (model, leads, aug).
 
-    cols = ["test_auc", "val_auc", "test_f1_macro"] + [f"auc_{c}" for c in SUPERCLASSES]
-    g = df.groupby(["model", "leads", "aug"])
-    mean, std = g[cols].mean(), g[cols].std(ddof=1).fillna(0.0)
-    out = pd.DataFrame({"n_seeds": g.size(), "params": g["params"].first()})
-    for c in cols:
-        out[f"{c}_mean"], out[f"{c}_std"] = mean[c], std[c]
-    out = out.reset_index().sort_values("test_auc_mean", ascending=False)
+    - Bỏ các dòng có group == "dev".
+    - Nếu cùng (model, leads, aug, seed) chạy nhiều lần thì giữ lần cuối.
+    - Kết quả có các cột: model, leads, aug, n_seeds, params, và với mỗi chỉ số trong
+      ["test_auc", "val_auc", "test_f1_macro", "auc_<lớp>" ...] có cặp <chỉ số>_mean, <chỉ số>_std
+      (std dùng ddof=1; chỉ có 1 seed thì std = 0).
+    - Sắp xếp giảm dần theo test_auc_mean.
+    """
+    raise NotImplementedError("TODO [A]: gộp các lượt chạy thành bảng trung bình ± độ lệch chuẩn")
+
+
+def aggregate(log_csv: str, out_dir: str) -> pd.DataFrame:
+    out = summarize_runs(pd.read_csv(log_csv))
 
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     out.to_csv(Path(out_dir) / "summary.csv", index=False)

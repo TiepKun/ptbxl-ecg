@@ -65,6 +65,37 @@ def predict_logits(model: nn.Module, X: torch.Tensor, device: torch.device, bs: 
     return torch.cat(outs)
 
 
+class EarlyStopper:
+    """Theo dõi điểm validation, giữ trọng số tốt nhất và báo khi nên dừng.
+
+    update(score, epoch, model) -> True nếu nên dừng.
+    - score là NaN thì coi như -1.0 (không cải thiện).
+    - Cải thiện khi score > best_score (nghiêm ngặt): lưu bản sao state_dict, đặt best_epoch,
+      đưa bộ đếm 'không cải thiện' về 0.
+    - Ngược lại tăng bộ đếm; dừng khi bộ đếm >= patience.
+    Thuộc tính: best_score (khởi tạo -1.0), best_epoch (0), best_state (None), bad (0).
+    """
+
+    def __init__(self, patience: int):
+        self.patience = patience
+        self.best_score, self.best_epoch, self.best_state, self.bad = -1.0, 0, None, 0
+
+    def update(self, score: float, epoch: int, model: nn.Module) -> bool:
+        raise NotImplementedError("TODO [B]: cập nhật điểm tốt nhất, lưu bản sao trọng số, quyết định dừng sớm")
+
+
+def train_one_epoch(model, X, Y, opt, sched, scaler, loss_fn, *, bs: int, steps: int,
+                    device: torch.device, use_amp: bool, aug: bool) -> float:
+    """Huấn luyện một epoch, trả về loss trung bình trên `steps` bước.
+
+    Mỗi bước: lấy batch ngẫu nhiên không lặp (hoán vị mới mỗi epoch), đưa lên `device`,
+    augment nếu `aug`, tính loss trong autocast (chuyển logit về float trước khi tính loss),
+    backward qua `scaler`, unscale rồi cắt gradient (max-norm 1.0), bước optimizer, scaler.update,
+    bước scheduler (sched.step() sau MỖI bước, vì OneCycleLR đếm theo bước).
+    """
+    raise NotImplementedError("TODO [B]: cài đặt một epoch huấn luyện (xem docstring)")
+
+
 def run(args: argparse.Namespace) -> dict:
     """Huấn luyện + đánh giá một cấu hình. Trả về dict kết quả (cũng được ghi vào CSV)."""
     set_seed(args.seed)
@@ -100,56 +131,32 @@ def run(args: argparse.Namespace) -> dict:
     loss_fn = nn.BCEWithLogitsLoss()
 
     # ---- vòng huấn luyện ----
-    history, best_auc, best_state, best_epoch, bad = [], -1.0, None, 0, 0
+    history, stopper = [], EarlyStopper(args.patience)
     t0 = time.time()
     for epoch in range(1, args.epochs + 1):
-        model.train()
-        perm = torch.randperm(len(Xtr), device=Xtr.device)
-        total = 0.0
-        for s in range(steps):
-            idx = perm[s * bs:(s + 1) * bs]
-            xb, yb = Xtr[idx].to(device), Ytr[idx].to(device)
-            if args.aug:
-                xb = augment(xb)
-            opt.zero_grad(set_to_none=True)
-            with torch.autocast(device_type=device.type, enabled=use_amp):
-                loss = loss_fn(model(xb).float(), yb)
-            scaler.scale(loss).backward()
-            scaler.unscale_(opt)
-            nn.utils.clip_grad_norm_(model.parameters(), 1.0)  # quan trọng với RNN
-            scaler.step(opt)
-            scaler.update()
-            sched.step()
-            total += loss.item()
-
+        train_loss = train_one_epoch(model, Xtr, Ytr, opt, sched, scaler, loss_fn, bs=bs, steps=steps,
+                                     device=device, use_amp=use_amp, aug=args.aug)
         val_logits = predict_logits(model, Xva, device)
         val_loss = loss_fn(val_logits, Yva).item()
         val_auc = macro_auc(Yva.numpy(), torch.sigmoid(val_logits).numpy())
-        history.append({"epoch": epoch, "train_loss": total / steps, "val_loss": val_loss,
+        history.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
                         "val_auc": val_auc, "lr": sched.get_last_lr()[0],
                         "elapsed_s": time.time() - t0})
-        print(f"  epoch {epoch:02d} | train {total / steps:.4f} | val {val_loss:.4f} | "
+        print(f"  epoch {epoch:02d} | train {train_loss:.4f} | val {val_loss:.4f} | "
               f"val AUC {val_auc:.4f}")
-
-        score = -1.0 if np.isnan(val_auc) else val_auc
-        if score > best_auc:
-            best_auc, best_epoch, bad = score, epoch, 0
-            best_state = copy.deepcopy(model.state_dict())
-        else:
-            bad += 1
-            if bad >= args.patience:
-                print(f"  dừng sớm ở epoch {epoch} (tốt nhất: epoch {best_epoch})")
-                break
+        if stopper.update(val_auc, epoch, model):
+            print(f"  dừng sớm ở epoch {epoch} (tốt nhất: epoch {stopper.best_epoch})")
+            break
     train_time = time.time() - t0
 
     # ---- đánh giá với checkpoint tốt nhất ----
-    model.load_state_dict(best_state)
+    model.load_state_dict(stopper.best_state)
     p_val = torch.sigmoid(predict_logits(model, Xva, device)).numpy()
     p_test = torch.sigmoid(predict_logits(model, Xte, device)).numpy()
     metrics = summarize(Yva.numpy(), p_val, Yte.numpy(), p_test)
 
     pd.DataFrame(history).to_csv(run_dir / "history.csv", index=False)
-    torch.save({"state_dict": best_state, "model": args.model, "model_kwargs": kw,
+    torch.save({"state_dict": stopper.best_state, "model": args.model, "model_kwargs": kw,
                 "leads": args.leads, "n_classes": len(SUPERCLASSES)}, run_dir / "best.pt")
     np.save(run_dir / "preds_val.npy", p_val)
     np.save(run_dir / "preds_test.npy", p_test)
@@ -158,7 +165,7 @@ def run(args: argparse.Namespace) -> dict:
 
     row = {"run_name": run_name, "group": args.group, "model": args.model, "leads": args.leads,
            "aug": int(args.aug), "seed": args.seed, "params": n_params,
-           "epochs_run": len(history), "best_epoch": best_epoch, "train_time_s": round(train_time, 1),
+           "epochs_run": len(history), "best_epoch": stopper.best_epoch, "train_time_s": round(train_time, 1),
            "device": str(device), "config": json.dumps({"lr": args.lr, "bs": bs,
                                                          "wd": args.weight_decay, "kw": kw}),
            **metrics}

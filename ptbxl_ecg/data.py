@@ -33,22 +33,7 @@ def build_labels(raw_dir: str | Path) -> pd.DataFrame:
     Trả về DataFrame (index = ecg_id) có các cột: filename_lr, strat_fold,
     và 5 cột 0/1 tương ứng 5 siêu lớp. Bản ghi không có nhãn chẩn đoán nào bị bỏ.
     """
-    raw = Path(raw_dir)
-    df = pd.read_csv(raw / "ptbxl_database.csv", index_col="ecg_id")
-    df["scp_codes"] = df["scp_codes"].apply(ast.literal_eval)
-
-    agg = pd.read_csv(raw / "scp_statements.csv", index_col=0)
-    agg = agg[agg["diagnostic"] == 1]  # chỉ giữ các mã thuộc nhóm chẩn đoán
-
-    def to_superclasses(codes: dict) -> list[str]:
-        found = {agg.loc[c, "diagnostic_class"] for c in codes if c in agg.index}
-        return sorted(found)
-
-    df["superclasses"] = df["scp_codes"].apply(to_superclasses)
-    df = df[df["superclasses"].apply(len) > 0].copy()
-    for c in SUPERCLASSES:
-        df[c] = df["superclasses"].apply(lambda s, c=c: int(c in s))
-    return df[["filename_lr", "strat_fold", *SUPERCLASSES]]
+    raise NotImplementedError("TODO [A]: đọc metadata + ánh xạ scp_codes sang 5 siêu lớp (xem docstring)")
 
 
 # --------------------------------------------------------------------------- #
@@ -97,11 +82,21 @@ def load_processed(data_dir: str | Path) -> dict:
 
 
 def split_indices(folds: np.ndarray) -> dict[str, np.ndarray]:
-    return {
-        "train": np.where(folds <= 8)[0],
-        "val": np.where(folds == 9)[0],
-        "test": np.where(folds == 10)[0],
-    }
+    """Chia chỉ số theo strat_fold: train = fold 1-8, val = fold 9, test = fold 10.
+
+    folds: mảng (N,) chứa số fold của từng bản ghi. Trả về dict {"train", "val", "test"} -> mảng chỉ số
+    (tăng dần). Ba tập không giao nhau.
+    """
+    raise NotImplementedError("TODO [A]: chia train/val/test theo strat_fold")
+
+
+def zscore_stats(X_train: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Tính (mean, std) theo từng chuyển đạo từ tập TRAIN.
+
+    X_train: (N, C, T). Trả về hai mảng shape (1, C, 1) để broadcast khi chuẩn hóa.
+    std cộng thêm 1e-6 để tránh chia cho 0.
+    """
+    raise NotImplementedError("TODO [A]: tính mean, std theo từng chuyển đạo trên tập train")
 
 
 def get_splits(data_dir: str | Path, leads: str = "12", max_train: int | None = None,
@@ -119,8 +114,7 @@ def get_splits(data_dir: str | Path, leads: str = "12", max_train: int | None = 
 
     lead_idx = LEAD_SETS[leads]
     X = data["X"][:, lead_idx, :]
-    mean = X[idx["train"]].mean(axis=(0, 2), keepdims=True)
-    std = X[idx["train"]].std(axis=(0, 2), keepdims=True) + 1e-6
+    mean, std = zscore_stats(X[idx["train"]])
     out = {}
     for name, ii in idx.items():
         out[name] = (((X[ii] - mean) / std).astype(np.float32), data["Y"][ii].astype(np.float32))

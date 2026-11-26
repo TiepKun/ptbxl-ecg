@@ -9,9 +9,11 @@ Bài tập lớn môn IT4653 - Học sâu và ứng dụng (HUST), Đề tài 10
 - **Chia tập (khuyến nghị của tác giả PTB-XL):** `strat_fold` 1-8 train, 9 validation, 10 test.
 - **Chỉ số chính:** macro-AUC trên test (fold 10); phụ: AUC từng lớp, macro-F1 (ngưỡng chọn trên validation).
 
-> **Trạng thái:** pipeline đã được kiểm thử bằng `pytest` và chạy thử trên dữ liệu **giả lập** (và một thư mục PTB-XL giả
-> đúng định dạng WFDB). Chưa có kết quả nào trên PTB-XL thật; mọi số liệu trong báo cáo phải do nhóm tự chạy và lấy từ
-> `logs/experiments.csv`.
+> **Trạng thái:** đây là **khung dự án**. Hạ tầng (đọc dữ liệu, ghi log, giao diện dòng lệnh, notebook Colab) đã có sẵn;
+> phần lõi của từng người được để trống dưới dạng hàm/lớp `raise NotImplementedError("TODO [A|B|C]: ...")` kèm mô tả
+> trong docstring và bộ test tương ứng. Mỗi thành viên tự cài đặt phần của mình cho đến khi test của mình xanh.
+> Chưa có kết quả nào trên PTB-XL thật; mọi số liệu trong báo cáo phải do nhóm tự chạy và lấy từ `logs/experiments.csv`.
+> Tìm tất cả chỗ cần làm: `grep -rn "TODO \[" ptbxl_ecg`.
 
 ## 1. Cấu trúc thư mục
 
@@ -25,7 +27,10 @@ ptbxl-ecg/
 │   ├── eda.py                 # thống kê mô tả, hình minh họa
 │   ├── features.py            # đặc trưng thủ công cho baseline
 │   ├── baseline.py            # Logistic Regression / Random Forest
-│   ├── models.py              # SimpleCNN, ResNet1D, BiGRU/BiLSTM, CNN+attention
+│   ├── models_common.py       # PoolHead, conv_stem, count_params (dùng chung, hạn chế sửa)
+│   ├── models_cnn.py          # [B] SimpleCNN, ResNet1D, CNN+attention
+│   ├── models_rnn.py          # [C] BiGRU/BiLSTM (CRNN)
+│   ├── models.py              # đăng ký mô hình: build_model, MODEL_NAMES (dùng chung)
 │   ├── train.py               # huấn luyện 1 cấu hình, ghi log
 │   ├── ablation.py            # chạy lưới thí nghiệm (main / leads / aug)
 │   ├── aggregate.py           # tổng hợp trung bình ± std, vẽ biểu đồ
@@ -33,7 +38,13 @@ ptbxl-ecg/
 │   ├── metrics.py, logging_utils.py
 │   └── synthetic.py           # dữ liệu giả lập để thử code (KHÔNG dùng cho kết quả thật)
 ├── scripts/download_data.sh   # tải PTB-XL (records100 + 2 CSV)
-├── tests/test_smoke.py
+├── notebooks/colab_ptbxl.ipynb # notebook chạy toàn bộ quy trình trên Google Colab (GPU)
+├── tests/
+│   ├── test_A_data_eval.py    # test cho vai trò A
+│   ├── test_B_cnn_train.py    # test cho vai trò B
+│   ├── test_C_rnn_ablation.py # test cho vai trò C
+│   ├── test_pipeline.py       # toàn pipeline (chạy sau cùng, cần cả A, B, C xong)
+│   └── conftest.py
 ├── docs/
 │   ├── PLAN.md                # phân công A/B/C và kế hoạch 7 ngày
 │   ├── PROPOSAL_DRAFT.md      # bản nháp đề xuất theo Phụ lục B
@@ -55,18 +66,24 @@ python -m venv .venv && source .venv/bin/activate        # Windows: .venv\Script
 pip install -r requirements.txt
 ```
 
-**Trên Google Colab / Kaggle** (PyTorch đã có sẵn, nhớ bật GPU T4):
-
-```python
-!git clone <địa chỉ repo của nhóm> ptbxl-ecg
-%cd ptbxl-ecg
-!pip install -q wfdb
-```
+**Trên Google Colab** (PyTorch đã có sẵn, nhớ bật GPU T4): mở [`notebooks/colab_ptbxl.ipynb`](notebooks/colab_ptbxl.ipynb)
+(`File > Open notebook > GitHub`, dán địa chỉ repo), điền ô **Cấu hình** (địa chỉ repo, `MEMBER` = A/B/C) rồi chạy từ trên xuống.
+Notebook tự clone repo, cài gói, tải dữ liệu vào Google Drive và chạy phần việc của người đang dùng. Notebook chưa được thử trên Colab thật.
 
 ## 3. Kiểm tra nhanh (không cần dữ liệu thật)
 
+Mỗi người chạy bộ test của mình; test là **đặc tả** của phần việc đó (hàm nào, trả về gì, ràng buộc nào).
+
 ```bash
-python -m pytest -q tests                 # 17 test, chạy trên CPU khoảng 15-20 giây
+python -m pytest -q tests/test_A_data_eval.py      # A: dữ liệu, đặc trưng, chỉ số, baseline, tổng hợp
+python -m pytest -q tests/test_B_cnn_train.py      # B: mô hình CNN/attention, vòng huấn luyện
+python -m pytest -q tests/test_C_rnn_ablation.py   # C: mô hình RNN, lưới ablation, saliency
+python -m pytest -q tests/test_pipeline.py         # cả nhóm, sau cùng: huấn luyện 1 epoch mọi mô hình trên dữ liệu giả
+```
+
+Khi chưa cài đặt, test báo lỗi `NotImplementedError: TODO [A|B|C] ...`; đó là chủ ý. Sau khi mọi phần xong, thử cả pipeline:
+
+```bash
 python -m ptbxl_ecg.synthetic --out-dir data/synthetic --n 1000
 python -m ptbxl_ecg.train --data-dir data/synthetic --model resnet1d --epochs 3 --group dev
 ```
@@ -128,8 +145,9 @@ Khi đổi, phải đổi cho **mọi** mô hình cần so sánh để giữ ng�
 ## 6. Tái lập kết quả
 
 - Mỗi lượt chạy đặt `--seed` cho `random`, `numpy`, `torch` và bật `cudnn.deterministic`; khuyến nghị seed `0 1 2` cho mọi cấu hình.
-- Mọi lượt chạy được ghi một dòng vào `logs/experiments.csv` (thời điểm, cấu hình, seed, số tham số, AUC/F1, thời gian, mã commit git).
-  Đây là **nhật ký thí nghiệm** cần nộp; **không sửa tay** file này.
+- Mọi lượt chạy được ghi một dòng vào file log (thời điểm, cấu hình, seed, số tham số, AUC/F1, thời gian, mã commit git).
+  Khi chạy trên Colab, mỗi người ghi vào file riêng `logs/experiments_<A|B|C>.csv`; notebook gộp chúng thành `logs/experiments.csv`.
+  Đây là **nhật ký thí nghiệm** cần nộp; **không sửa tay** các file này.
 - Cấu hình đầy đủ, lịch sử huấn luyện, dự đoán và checkpoint nằm trong `runs/<tên lượt chạy>/`.
 - Kết quả trên GPU có thể lệch rất nhẹ giữa các máy/phiên bản PyTorch dù cùng seed; hãy báo cáo trung bình ± độ lệch chuẩn và nói rõ khác biệt nào nằm trong nhiễu.
 - Chạy lại `ablation` sẽ bỏ qua các lượt đã có `test_metrics.json`, nên an toàn khi Colab bị ngắt.
@@ -140,9 +158,22 @@ AdamW (lr 1e-3, weight decay 1e-2) + OneCycleLR, BCE đa nhãn, batch 128, 30 ep
 dừng sớm theo val macro-AUC (kiên nhẫn 10 epoch), lấy checkpoint có val AUC tốt nhất để đánh giá trên test.
 Chuẩn hóa z-score theo từng chuyển đạo, thống kê chỉ tính trên tập train. Augmentation: nhiễu Gauss, co giãn biên độ ±20%, dịch thời gian ±0,5 giây.
 
-## 8. Phân công và kế hoạch
+## 8. Phân công và cách làm việc chung
 
-Xem [`docs/PLAN.md`](docs/PLAN.md). Bản nháp đề xuất theo Phụ lục B nằm ở [`docs/PROPOSAL_DRAFT.md`](docs/PROPOSAL_DRAFT.md).
+| Vai trò | Thành viên | Phần lõi cần cài đặt (tìm `TODO [X]`) |
+|---|---|---|
+| A | Nguyễn Mạnh Hiếu (20261237M) | `data.py` (`build_labels`, `split_indices`, `zscore_stats`), `features.py`, `metrics.py`, `baseline.py` (`build_baselines`), `aggregate.py` (`summarize_runs`) |
+| B | Nguyễn Khắc Tiếp (20262425M) | `models_cnn.py` (SimpleCNN, BasicBlock1D, ResNet1D, CNNAttention), `train.py` (`EarlyStopper.update`, `train_one_epoch`) |
+| C | Trần Mạnh Hùng (20262423M) | `models_rnn.py` (CRNN), `ablation.py` (`build_jobs`), `saliency.py` (`lead_importance`) |
+
+Quy tắc: mỗi người chỉ sửa tệp của mình, làm trên nhánh riêng (`git checkout -b feat/A-metrics`), mở pull request để người khác xem trước khi gộp.
+Tệp dùng chung (`models_common.py`, `models.py`, `conftest.py`, `logging_utils.py`) chỉ sửa khi đã báo cả nhóm.
+
+Thứ tự để không ai bị chặn: phần mô hình của B và C và `build_jobs`, `lead_importance` độc lập với A, nên làm song song ngay.
+`train.run` cần `split_indices`, `zscore_stats` và `metrics.py` của A, vì vậy A nên làm các hàm này trước (nhỏ, vài chục dòng).
+`test_pipeline.py` chạy cuối cùng khi cả ba bộ test đã xanh.
+
+Xem thêm [`docs/PLAN.md`](docs/PLAN.md). Bản nháp đề xuất theo Phụ lục B nằm ở [`docs/PROPOSAL_DRAFT.md`](docs/PROPOSAL_DRAFT.md).
 
 ## 9. Nguồn tham khảo và phần mã tự viết
 
@@ -152,5 +183,6 @@ Xem [`docs/PLAN.md`](docs/PLAN.md). Bản nháp đề xuất theo Phụ lục B 
 - Benchmark để đối chiếu số liệu: Strodthoff, N. et al. *Deep Learning for ECG Analysis: Benchmarks and Insights from PTB-XL*, IEEE JBHI 2021
   (repo `helme/ecg_ptbxl_benchmarking`). **Repo này không sao chép mã của benchmark**; chỉ dùng cùng cách chia fold và cách ánh xạ 5 siêu lớp.
 - Thư viện: PyTorch, scikit-learn, wfdb, pandas, scipy, matplotlib.
-- Khung mã ban đầu được tạo với sự hỗ trợ của Claude (Anthropic); xem [`docs/AI_DECLARATION.md`](docs/AI_DECLARATION.md).
-  Mọi thành viên phải đọc hiểu và giải thích được phần mình phụ trách.
+- Khung dự án (cấu trúc thư mục, hạ tầng, bộ test, notebook) được tạo với sự hỗ trợ của Claude (Anthropic); xem
+  [`docs/AI_DECLARATION.md`](docs/AI_DECLARATION.md). Các hàm/lớp đánh dấu `TODO [A|B|C]` do thành viên tương ứng tự cài đặt;
+  nếu dùng công cụ AI cho phần đó thì phải khai báo cụ thể. Mọi thành viên phải đọc hiểu và giải thích được phần mình phụ trách.

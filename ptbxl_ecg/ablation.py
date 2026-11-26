@@ -24,16 +24,15 @@ MAIN_MODELS = ["cnn_simple", "resnet1d", "gru", "lstm", "cnn_attn"]
 
 
 def build_jobs(group: str, model: str, seeds: list[int]) -> list[dict]:
-    jobs = []
-    for s in seeds:
-        if group in ("main", "all"):
-            jobs += [dict(group="main", model=m, leads="12", aug=True, seed=s) for m in MAIN_MODELS]
-        if group in ("leads", "all"):
-            jobs += [dict(group="leads", model=model, leads=l, aug=True, seed=s)
-                     for l in ("limb6", "II")]
-        if group in ("aug", "all"):
-            jobs.append(dict(group="aug", model=model, leads="12", aug=False, seed=s))
-    return jobs
+    """Sinh danh sách lượt chạy (mỗi lượt là dict có khóa group, model, leads, aug, seed).
+
+    Với mỗi seed trong `seeds`:
+      - group "main" (khi group là "main" hoặc "all"): mỗi mô hình trong MAIN_MODELS, leads="12", aug=True.
+      - group "leads" ("leads" hoặc "all"): mô hình `model`, leads lần lượt "limb6" và "II", aug=True.
+      - group "aug" ("aug" hoặc "all"): mô hình `model`, leads="12", aug=False.
+    Giá trị aug phải là bool thật (True/False). 12 chuyển đạo có augmentation đã có ở nhóm main nên không lặp lại.
+    """
+    raise NotImplementedError("TODO [C]: sinh lưới lượt chạy ablation")
 
 
 def job_name(j: dict) -> str:
@@ -45,6 +44,8 @@ def main(argv=None) -> None:
     ap.add_argument("--group", choices=["main", "leads", "aug", "all"], default="all")
     ap.add_argument("--model", choices=MODEL_NAMES, default="resnet1d",
                     help="mô hình dùng cho ablation leads/aug (chọn mô hình tốt nhất ở nhóm main)")
+    ap.add_argument("--models", nargs="+", choices=MODEL_NAMES, default=None,
+                    help="chỉ chạy các lượt của những mô hình này (để chia việc cho nhiều máy/tài khoản)")
     ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--batch-size", type=int, default=128)
@@ -56,6 +57,8 @@ def main(argv=None) -> None:
     a = ap.parse_args(argv)
 
     jobs = build_jobs(a.group, a.model, a.seeds)
+    if a.models:
+        jobs = [j for j in jobs if j["model"] in a.models]
     print(f"Tổng số lượt chạy: {len(jobs)}")
     for i, j in enumerate(jobs, 1):
         name = job_name(j)

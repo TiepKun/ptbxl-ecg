@@ -1,16 +1,25 @@
 # Phân công và kế hoạch 7 ngày
 
-Ba thành viên điền tên vào bảng. Mỗi người **đọc kỹ và giải thích được từng dòng** trong các tệp mình phụ trách
+Tên thành viên đã điền trong bảng. Mỗi người **đọc kỹ và giải thích được từng dòng** trong các tệp mình phụ trách
 (đề bài: thành viên không trả lời được về phần mình khai sẽ bị hạ hệ số đóng góp).
 
 | Vai trò | Thành viên | Tệp phụ trách | Nhiệm vụ chính |
 |---|---|---|---|
-| A | (điền tên) | `data.py`, `prepare_data.py`, `eda.py`, `features.py`, `baseline.py`, `metrics.py`, `logging_utils.py`, `aggregate.py` | Tải và chuẩn bị dữ liệu, thống kê mất cân bằng nhãn, baseline thủ công, khung đánh giá, gộp kết quả |
-| B | (điền tên) | `models.py` (SimpleCNN, ResNet1D, CNNAttention), `train.py` | Mô hình CNN và CNN + attention, vòng huấn luyện, chọn siêu tham số |
-| C | (điền tên) | `models.py` (CRNN), `ablation.py`, `saliency.py` | BiGRU/BiLSTM, toàn bộ ablation, phân tích lỗi theo lớp, saliency theo chuyển đạo, demo Gradio (tùy chọn) |
+| A | Nguyễn Mạnh Hiếu (20261237M) | `data.py`, `prepare_data.py`, `eda.py`, `features.py`, `baseline.py`, `metrics.py`, `aggregate.py` | Tải và chuẩn bị dữ liệu, thống kê mất cân bằng nhãn, baseline thủ công, khung đánh giá, gộp kết quả |
+| B | Nguyễn Khắc Tiếp (20262425M) | `models_cnn.py` (SimpleCNN, ResNet1D, CNNAttention), `train.py` | Mô hình CNN và CNN + attention, vòng huấn luyện, chọn siêu tham số |
+| C | Trần Mạnh Hùng (20262423M) | `models_rnn.py` (CRNN), `ablation.py`, `saliency.py` | BiGRU/BiLSTM, toàn bộ ablation, phân tích lỗi theo lớp, saliency theo chuyển đạo, demo Gradio (tùy chọn) |
 
 Phần báo cáo: A viết mục 3 (Dữ liệu) và baseline; B viết mục 4 (Phương pháp); C viết mục 5-6 (Thí nghiệm, phân tích). Mục 1, 2, 7 chia đều.
 Mỗi người tự trình bày phần của mình khi bảo vệ. Tỉ lệ đóng góp ghi vào bảng phân công (tổng 100%).
+
+## Cách cài đặt phần lõi (khung TODO)
+
+Mỗi hàm/lớp cần làm có `raise NotImplementedError("TODO [A|B|C]: ...")` và mô tả yêu cầu trong docstring.
+Bộ test `tests/test_<A|B|C>_*.py` là đặc tả: làm đến khi xanh. Thứ tự gợi ý để không ai bị chặn:
+
+1. **Song song ngay:** A (`build_labels`, `features`), B (`models_cnn.py`, `EarlyStopper`, `train_one_epoch`), C (`models_rnn.py`, `build_jobs`, `lead_importance`).
+2. **A ưu tiên sớm:** `split_indices`, `zscore_stats` và `metrics.py` (vì `train.run` dùng), rồi `baseline.py`, `aggregate.py`.
+3. Khi test của cả ba xanh: chạy `tests/test_pipeline.py`, rồi chạy dữ liệu thật bằng `notebooks/colab_ptbxl.ipynb`.
 
 ## Việc cần bổ sung (chưa có trong repo)
 
@@ -32,7 +41,8 @@ Mỗi người tự trình bày phần của mình khi bảo vệ. Tỉ lệ đ�
 | 7 | README, `requirements.txt`, rà soát log khớp báo cáo | Slide phần của mình | Slide phần của mình, tập trình bày |
 
 Ghi chú: ước tính mỗi lượt huấn luyện 15-20 phút trên T4, khoảng 18-25 lượt, tổng 5-8 giờ GPU (chưa đo trên PTB-XL thật). Nên chia lượt chạy ra 3 tài khoản Colab/Kaggle:
-mỗi người chạy `ablation` với `--seeds` khác nhau rồi gộp các file `logs/experiments.csv` (nối các dòng, giữ một header) trước khi chạy `aggregate`.
+mỗi người chạy phần của mình trong `notebooks/colab_ptbxl.ipynb` (đặt `MEMBER` = A/B/C; `ablation --models ...` chia theo mô hình), log ghi vào `logs/experiments_<A|B|C>.csv`;
+notebook gộp các file này thành `logs/experiments.csv` trước khi chạy `aggregate`.
 
 ## Danh sách nộp (theo đề bài)
 

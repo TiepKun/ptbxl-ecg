@@ -18,11 +18,7 @@ from .models import build_model
 
 def lead_importance(model, X: torch.Tensor, cls: int) -> np.ndarray:
     """|gradient x input| của logit lớp `cls`, trung bình theo mẫu và thời gian -> (C,)."""
-    x = X.clone().requires_grad_(True)
-    # cuDNN không cho backward của RNN ở chế độ eval, nên tắt cuDNN khi tính gradient
-    with torch.backends.cudnn.flags(enabled=False):
-        model(x)[:, cls].sum().backward()
-    return (x.grad * x).abs().mean(dim=(0, 2)).detach().cpu().numpy()
+    raise NotImplementedError("TODO [C]: tính |gradient x input| theo chuyển đạo")
 
 
 def main() -> None:

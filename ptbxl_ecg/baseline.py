@@ -32,6 +32,14 @@ def _proba(clf, X, n_classes):
     return p
 
 
+def build_baselines(seed: int) -> dict:
+    """Trả về {tên: bộ phân loại} cho baseline cổ điển (đa nhãn, có fit và predict_proba).
+
+    Cần có tên "baseline_lr" (Logistic Regression) và "baseline_rf" (Random Forest).
+    """
+    raise NotImplementedError("TODO [A]: tạo Logistic Regression (chuẩn hóa + OneVsRest) và Random Forest")
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--data-dir", default="data/processed")
@@ -52,11 +60,7 @@ def main(argv=None) -> None:
     K = len(SUPERCLASSES)
 
     for seed in a.seeds:
-        models = {
-            "baseline_lr": make_pipeline(StandardScaler(), OneVsRestClassifier(
-                LogisticRegression(max_iter=2000, C=1.0))),
-            "baseline_rf": RandomForestClassifier(n_estimators=300, n_jobs=-1, random_state=seed),
-        }
+        models = build_baselines(seed)
         for name, clf in models.items():
             t0 = time.time()
             clf.fit(F["train"], Y["train"])

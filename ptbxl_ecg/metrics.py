@@ -8,32 +8,31 @@ from .data import SUPERCLASSES
 
 
 def per_class_auc(y: np.ndarray, p: np.ndarray) -> list[float]:
-    out = []
-    for k in range(y.shape[1]):
-        if len(np.unique(y[:, k])) < 2:  # lớp không đủ cả 0 và 1 -> không tính được AUC
-            out.append(float("nan"))
-        else:
-            out.append(float(roc_auc_score(y[:, k], p[:, k])))
-    return out
+    """AUC của từng lớp (đa nhãn). y, p: (N, K), y là 0/1, p là xác suất.
+
+    Trả về list K số float. Lớp mà y chỉ có một giá trị (toàn 0 hoặc toàn 1) thì không tính được AUC:
+    trả về NaN cho lớp đó. Gợi ý: sklearn.metrics.roc_auc_score.
+    """
+    raise NotImplementedError("TODO [A]: AUC theo lớp, NaN nếu lớp không đủ cả hai nhãn")
 
 
 def macro_auc(y: np.ndarray, p: np.ndarray) -> float:
-    aucs = per_class_auc(y, p)
-    return float(np.nanmean(aucs)) if not np.all(np.isnan(aucs)) else float("nan")
+    """Trung bình AUC các lớp, bỏ qua lớp NaN. Nếu mọi lớp đều NaN thì trả về NaN (float).
+    """
+    raise NotImplementedError("TODO [A]: macro-AUC (nanmean của per_class_auc)")
 
 
 def best_thresholds(y_val: np.ndarray, p_val: np.ndarray) -> np.ndarray:
     """Với mỗi lớp chọn ngưỡng cho F1 cao nhất trên tập validation."""
-    grid = np.arange(0.05, 0.96, 0.01)
-    thr = np.full(y_val.shape[1], 0.5)
-    for k in range(y_val.shape[1]):
-        scores = [f1_score(y_val[:, k], p_val[:, k] >= t, zero_division=0) for t in grid]
-        thr[k] = grid[int(np.argmax(scores))]
-    return thr
+    raise NotImplementedError("TODO [A]: chọn ngưỡng tối ưu F1 theo từng lớp trên tập validation")
 
 
 def f1_per_class(y: np.ndarray, p: np.ndarray, thr: np.ndarray) -> list[float]:
-    return [float(f1_score(y[:, k], p[:, k] >= thr[k], zero_division=0)) for k in range(y.shape[1])]
+    """F1 của từng lớp với ngưỡng riêng thr[k]: dự đoán dương khi p[:, k] >= thr[k].
+
+    Trả về list K số float; dùng zero_division=0 để lớp không có mẫu dương không gây lỗi.
+    """
+    raise NotImplementedError("TODO [A]: F1 theo lớp với ngưỡng cho trước")
 
 
 def summarize(y_val, p_val, y_test, p_test) -> dict:
