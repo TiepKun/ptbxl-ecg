@@ -33,7 +33,30 @@ def build_labels(raw_dir: str | Path) -> pd.DataFrame:
     Trả về DataFrame (index = ecg_id) có các cột: filename_lr, strat_fold,
     và 5 cột 0/1 tương ứng 5 siêu lớp. Bản ghi không có nhãn chẩn đoán nào bị bỏ.
     """
-    raise NotImplementedError("TODO [A]: đọc metadata + ánh xạ scp_codes sang 5 siêu lớp (xem docstring)")
+    raw = Path(raw_dir)
+    df = pd.read_csv(raw / "ptbxl_database.csv", index_col="ecg_id")
+    # scp_codes lưu dưới dạng chuỗi, vd "{'NORM': 100.0, 'SR': 0.0}" -> chuyển thành dict
+    df["scp_codes"] = df["scp_codes"].apply(ast.literal_eval)
+
+    # Bảng mã SCP -> siêu lớp: chỉ giữ các mã mang tính chẩn đoán (diagnostic == 1)
+    scp = pd.read_csv(raw / "scp_statements.csv", index_col=0)
+    scp = scp[scp["diagnostic"] == 1]
+    code_to_class = scp["diagnostic_class"].to_dict()
+
+    def to_superclasses(codes: dict) -> list[str]:
+        # Mã không chẩn đoán (nhịp, hình dạng...) không có trong code_to_class nên bị bỏ qua.
+        # Dùng set để một siêu lớp xuất hiện bởi nhiều mã vẫn chỉ tính một lần.
+        return sorted({code_to_class[c] for c in codes if c in code_to_class})
+
+    labels = df["scp_codes"].apply(to_superclasses)
+    df = df[labels.str.len() > 0].copy()  # bỏ bản ghi không có nhãn chẩn đoán nào
+    labels = labels[df.index]
+
+    # Multi-hot: mỗi siêu lớp một cột 0/1
+    for cls in SUPERCLASSES:
+        df[cls] = labels.apply(lambda ls, c=cls: int(c in ls))
+
+    return df[["filename_lr", "strat_fold"] + SUPERCLASSES]
 
 
 # --------------------------------------------------------------------------- #
@@ -87,7 +110,12 @@ def split_indices(folds: np.ndarray) -> dict[str, np.ndarray]:
     folds: mảng (N,) chứa số fold của từng bản ghi. Trả về dict {"train", "val", "test"} -> mảng chỉ số
     (tăng dần). Ba tập không giao nhau.
     """
-    raise NotImplementedError("TODO [A]: chia train/val/test theo strat_fold")
+    folds = np.asarray(folds)
+    return {
+        "train": np.flatnonzero((folds >= 1) & (folds <= 8)),
+        "val": np.flatnonzero(folds == 9),
+        "test": np.flatnonzero(folds == 10),
+    }
 
 
 def zscore_stats(X_train: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -96,7 +124,16 @@ def zscore_stats(X_train: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     X_train: (N, C, T). Trả về hai mảng shape (1, C, 1) để broadcast khi chuẩn hóa.
     std cộng thêm 1e-6 để tránh chia cho 0.
     """
-    raise NotImplementedError("TODO [A]: tính mean, std theo từng chuyển đạo trên tập train")
+    c = X_train.shape[1]
+    mean = np.zeros((1, c, 1), dtype=np.float32)
+    std = np.zeros((1, c, 1), dtype=np.float32)
+    # Lặp từng chuyển đạo + tích lũy float64: chính xác hơn float32 mà không cần
+    # tạo một bản sao float64 của toàn bộ tập train (~1,6 GB với PTB-XL).
+    for k in range(c):
+        lead = X_train[:, k, :]
+        mean[0, k, 0] = lead.mean(dtype=np.float64)
+        std[0, k, 0] = lead.std(dtype=np.float64)
+    return mean, std + 1e-6
 
 
 def get_splits(data_dir: str | Path, leads: str = "12", max_train: int | None = None,

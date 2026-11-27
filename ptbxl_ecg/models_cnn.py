@@ -23,10 +23,21 @@ class SimpleCNN(nn.Module):
 
     def __init__(self, in_ch: int, n_classes: int, width: int = 32):
         super().__init__()
-        raise NotImplementedError("TODO [B]: cài đặt SimpleCNN theo docstring của lớp")
+
+        def block(cin: int, cout: int, k: int) -> nn.Sequential:
+            # bias=False vì BatchNorm ngay sau đã có tham số dịch (beta)
+            return nn.Sequential(nn.Conv1d(cin, cout, k, padding=k // 2, bias=False),
+                                 nn.BatchNorm1d(cout), nn.ReLU(inplace=True), nn.MaxPool1d(2))
+
+        self.features = nn.Sequential(
+            block(in_ch, width, 7),              # 1000 -> 500
+            block(width, 2 * width, 5),          # 500  -> 250
+            block(2 * width, 4 * width, 5),      # 250  -> 125
+        )
+        self.head = PoolHead(4 * width, n_classes)
 
     def forward(self, x):
-        raise NotImplementedError("TODO [B]: forward của SimpleCNN")
+        return self.head(self.features(x))
 
 
 # --------------------------------------------------------------------------- #
@@ -42,10 +53,23 @@ class BasicBlock1D(nn.Module):
 
     def __init__(self, cin: int, cout: int, stride: int, kernel: int = 7):
         super().__init__()
-        raise NotImplementedError("TODO [B]: cài đặt BasicBlock1D theo docstring của lớp")
+        pad = kernel // 2
+        self.conv1 = nn.Conv1d(cin, cout, kernel, stride=stride, padding=pad, bias=False)
+        self.bn1 = nn.BatchNorm1d(cout)
+        self.conv2 = nn.Conv1d(cout, cout, kernel, stride=1, padding=pad, bias=False)
+        self.bn2 = nn.BatchNorm1d(cout)
+        self.relu = nn.ReLU(inplace=True)
+        if stride != 1 or cin != cout:
+            # Đường tắt phải khớp cả số kênh lẫn độ dài với nhánh chính
+            self.shortcut = nn.Sequential(nn.Conv1d(cin, cout, 1, stride=stride, bias=False),
+                                          nn.BatchNorm1d(cout))
+        else:
+            self.shortcut = nn.Identity()
 
     def forward(self, x):
-        raise NotImplementedError("TODO [B]: forward của BasicBlock1D")
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        return self.relu(out + self.shortcut(x))
 
 
 class ResNet1D(nn.Module):
@@ -59,10 +83,22 @@ class ResNet1D(nn.Module):
     def __init__(self, in_ch: int, n_classes: int, width: int = 32, blocks=(1, 1, 1, 1),
                  kernel: int = 7):
         super().__init__()
-        raise NotImplementedError("TODO [B]: cài đặt ResNet1D theo docstring của lớp")
+        self.stem = nn.Sequential(
+            nn.Conv1d(in_ch, width, 15, stride=2, padding=7, bias=False),   # 1000 -> 500
+            nn.BatchNorm1d(width), nn.ReLU(inplace=True),
+        )
+        chans = [width, 2 * width, 4 * width, 4 * width]
+        layers, cin = [], width
+        for stage, (cout, n_blocks) in enumerate(zip(chans, blocks)):
+            for b in range(n_blocks):
+                stride = 2 if (b == 0 and stage > 0) else 1                  # 500 -> 250 -> 125 -> 63
+                layers.append(BasicBlock1D(cin, cout, stride, kernel))
+                cin = cout
+        self.body = nn.Sequential(*layers)
+        self.head = PoolHead(cin, n_classes)
 
     def forward(self, x):
-        raise NotImplementedError("TODO [B]: forward của ResNet1D")
+        return self.head(self.body(self.stem(x)))
 
 
 # --------------------------------------------------------------------------- #
@@ -81,7 +117,25 @@ class CNNAttention(nn.Module):
     def __init__(self, in_ch: int, n_classes: int, d_model: int = 128, heads: int = 4,
                  layers: int = 2, ff_mult: int = 4, dropout: float = 0.1, seq_len: int = 1000):
         super().__init__()
-        raise NotImplementedError("TODO [B]: cài đặt CNNAttention theo docstring của lớp")
+        self.stem = conv_stem(in_ch, d_model)                                # 1000 -> 250 token
+        # Chạy thử stem để biết số token. Tạm để eval() để lượt chạy thử với tensor 0
+        # không làm lệch running_mean/running_var của BatchNorm.
+        self.stem.eval()
+        with torch.no_grad():
+            n_tokens = self.stem(torch.zeros(1, in_ch, seq_len)).shape[-1]
+        self.stem.train()
+
+        self.pos = nn.Parameter(torch.zeros(1, n_tokens, d_model))
+        nn.init.trunc_normal_(self.pos, std=0.02)
+        layer = nn.TransformerEncoderLayer(d_model, heads, dim_feedforward=d_model * ff_mult,
+                                           dropout=dropout, batch_first=True, norm_first=True)
+        self.encoder = nn.TransformerEncoder(layer, layers, enable_nested_tensor=False)
+        # norm_first=True: đầu ra encoder chưa qua LayerNorm cuối -> thêm một LayerNorm
+        self.norm = nn.LayerNorm(d_model)
+        self.head = PoolHead(d_model, n_classes)
 
     def forward(self, x):
-        raise NotImplementedError("TODO [B]: forward của CNNAttention")
+        h = self.stem(x).transpose(1, 2)                                     # (B, D, T') -> (B, T', D)
+        h = h + self.pos[:, :h.size(1)]
+        h = self.norm(self.encoder(h))
+        return self.head(h.transpose(1, 2))                                  # (B, T', D) -> (B, D, T')

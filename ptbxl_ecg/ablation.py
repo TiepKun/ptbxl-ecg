@@ -32,7 +32,20 @@ def build_jobs(group: str, model: str, seeds: list[int]) -> list[dict]:
       - group "aug" ("aug" hoặc "all"): mô hình `model`, leads="12", aug=False.
     Giá trị aug phải là bool thật (True/False). 12 chuyển đạo có augmentation đã có ở nhóm main nên không lặp lại.
     """
-    raise NotImplementedError("TODO [C]: sinh lưới lượt chạy ablation")
+    if group not in ("main", "leads", "aug", "all"):
+        raise ValueError(f"group không hợp lệ: {group}")
+    jobs = []
+    # Seed ở vòng ngoài: chạy hết seed 0 của mọi cấu hình trước, nên nếu Colab ngắt giữa chừng
+    # vẫn có đủ một seed cho mọi cấu hình để so sánh.
+    for seed in seeds:
+        if group in ("main", "all"):
+            jobs += [dict(group="main", model=m, leads="12", aug=True, seed=int(seed)) for m in MAIN_MODELS]
+        if group in ("leads", "all"):
+            jobs += [dict(group="leads", model=model, leads=ld, aug=True, seed=int(seed))
+                     for ld in ("limb6", "II")]
+        if group in ("aug", "all"):
+            jobs.append(dict(group="aug", model=model, leads="12", aug=False, seed=int(seed)))
+    return jobs
 
 
 def job_name(j: dict) -> str:

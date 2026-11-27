@@ -18,7 +18,14 @@ from .models import build_model
 
 def lead_importance(model, X: torch.Tensor, cls: int) -> np.ndarray:
     """|gradient x input| của logit lớp `cls`, trung bình theo mẫu và thời gian -> (C,)."""
-    raise NotImplementedError("TODO [C]: tính |gradient x input| theo chuyển đạo")
+    model.eval()
+    dev = next(model.parameters()).device
+    x = X.detach().to(dev).clone().requires_grad_(True)
+    # cuDNN không cho backward qua RNN ở chế độ eval -> tắt cuDNN trong lúc tính (CPU không ảnh hưởng)
+    with torch.backends.cudnn.flags(enabled=False):
+        score = model(x)[:, cls].sum()          # tổng theo mẫu: gradient mỗi mẫu độc lập nhau
+        (grad,) = torch.autograd.grad(score, x)
+    return (grad * x).abs().mean(dim=(0, 2)).detach().cpu().numpy()
 
 
 def main() -> None:

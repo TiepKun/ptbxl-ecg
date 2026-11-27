@@ -37,7 +37,14 @@ def build_baselines(seed: int) -> dict:
 
     Cần có tên "baseline_lr" (Logistic Regression) và "baseline_rf" (Random Forest).
     """
-    raise NotImplementedError("TODO [A]: tạo Logistic Regression (chuẩn hóa + OneVsRest) và Random Forest")
+    # LR nhạy với thang đo của đặc trưng -> chuẩn hóa trước; OneVsRest = một bộ LR nhị phân cho mỗi lớp.
+    lr = make_pipeline(
+        StandardScaler(),
+        OneVsRestClassifier(LogisticRegression(max_iter=2000, C=1.0, random_state=seed)),
+    )
+    # RF hỗ trợ đa nhãn trực tiếp (multi-output); không cần chuẩn hóa.
+    rf = RandomForestClassifier(n_estimators=300, min_samples_leaf=2, n_jobs=-1, random_state=seed)
+    return {"baseline_lr": lr, "baseline_rf": rf}
 
 
 def main(argv=None) -> None:

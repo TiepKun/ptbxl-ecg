@@ -27,7 +27,18 @@ class CRNN(nn.Module):
     def __init__(self, in_ch: int, n_classes: int, rnn: str = "gru", stem_dim: int = 64,
                  hidden: int | None = None, layers: int = 2, dropout: float = 0.2):
         super().__init__()
-        raise NotImplementedError("TODO [C]: cài đặt CRNN theo docstring của lớp")
+        rnn = rnn.lower()
+        if rnn not in self.DEFAULT_HIDDEN:
+            raise ValueError(f"rnn phải là 'gru' hoặc 'lstm', nhận được {rnn!r}")
+        hidden = hidden or self.DEFAULT_HIDDEN[rnn]
+        self.stem = conv_stem(in_ch, stem_dim)                               # 1000 -> 250 bước
+        rnn_cls = nn.GRU if rnn == "gru" else nn.LSTM
+        # PyTorch chỉ áp dropout GIỮA các lớp RNN; với 1 lớp phải để 0 (nếu không sẽ có cảnh báo)
+        self.rnn = rnn_cls(stem_dim, hidden, num_layers=layers, batch_first=True, bidirectional=True,
+                           dropout=dropout if layers > 1 else 0.0)
+        self.head = PoolHead(2 * hidden, n_classes)                          # 2 chiều -> 2 * hidden
 
     def forward(self, x):
-        raise NotImplementedError("TODO [C]: forward của CRNN")
+        h = self.stem(x).transpose(1, 2)                                     # (B, D, T') -> (B, T', D)
+        h, _ = self.rnn(h)                                                   # (B, T', 2H)
+        return self.head(h.transpose(1, 2))                                  # (B, 2H, T')

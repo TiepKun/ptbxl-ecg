@@ -81,7 +81,16 @@ class EarlyStopper:
         self.best_score, self.best_epoch, self.best_state, self.bad = -1.0, 0, None, 0
 
     def update(self, score: float, epoch: int, model: nn.Module) -> bool:
-        raise NotImplementedError("TODO [B]: cập nhật điểm tốt nhất, lưu bản sao trọng số, quyết định dừng sớm")
+        if score is None or not np.isfinite(score):
+            score = -1.0
+        if score > self.best_score:
+            self.best_score, self.best_epoch, self.bad = float(score), epoch, 0
+            # Phải SAO CHÉP: state_dict() trả về tham chiếu tới tensor đang được huấn luyện.
+            # Để trên CPU cho đỡ tốn bộ nhớ GPU; load_state_dict sẽ tự chép lại sang GPU.
+            self.best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+        else:
+            self.bad += 1
+        return self.bad >= self.patience
 
 
 def train_one_epoch(model, X, Y, opt, sched, scaler, loss_fn, *, bs: int, steps: int,
@@ -93,7 +102,32 @@ def train_one_epoch(model, X, Y, opt, sched, scaler, loss_fn, *, bs: int, steps:
     backward qua `scaler`, unscale rồi cắt gradient (max-norm 1.0), bước optimizer, scaler.update,
     bước scheduler (sched.step() sau MỖI bước, vì OneCycleLR đếm theo bước).
     """
-    raise NotImplementedError("TODO [B]: cài đặt một epoch huấn luyện (xem docstring)")
+    model.train()
+    n = len(X)
+    # Hoán vị mới mỗi epoch; nếu steps * bs > n thì nối thêm hoán vị (bình thường run() luôn có steps*bs <= n).
+    n_perm = -(-steps * bs // n)
+    perm = torch.cat([torch.randperm(n, device=X.device) for _ in range(n_perm)])
+    amp_device = "cuda" if device.type == "cuda" else "cpu"
+
+    total = 0.0
+    for s in range(steps):
+        ii = perm[s * bs:(s + 1) * bs]
+        xb = X[ii].to(device, non_blocking=True)
+        yb = Y[ii].to(device, non_blocking=True)
+        if aug:
+            xb = augment(xb)
+        with torch.autocast(device_type=amp_device, enabled=use_amp):
+            logits = model(xb)
+            loss = loss_fn(logits.float(), yb)
+        opt.zero_grad(set_to_none=True)
+        scaler.scale(loss).backward()
+        scaler.unscale_(opt)                       # phải unscale trước khi cắt gradient
+        nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        scaler.step(opt)
+        scaler.update()
+        sched.step()                               # OneCycleLR đếm theo bước, không theo epoch
+        total += loss.item()
+    return total / steps
 
 
 def run(args: argparse.Namespace) -> dict:

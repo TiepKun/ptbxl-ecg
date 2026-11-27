@@ -24,7 +24,17 @@ def summarize_runs(df: pd.DataFrame) -> pd.DataFrame:
       (std dùng ddof=1; chỉ có 1 seed thì std = 0).
     - Sắp xếp giảm dần theo test_auc_mean.
     """
-    raise NotImplementedError("TODO [A]: gộp các lượt chạy thành bảng trung bình ± độ lệch chuẩn")
+    keys = ["model", "leads", "aug"]
+    df = df[df["group"] != "dev"]
+    df = df.drop_duplicates(subset=keys + ["seed"], keep="last")  # CSV ghi nối tiếp -> dòng sau là lần chạy mới hơn
+
+    metrics = ["test_auc", "val_auc", "test_f1_macro"] + [f"auc_{c}" for c in SUPERCLASSES]
+    g = df.groupby(keys, sort=False)
+    out = g.agg(n_seeds=("seed", "size"), params=("params", "first"))
+    for m in metrics:
+        out[f"{m}_mean"] = g[m].mean()
+        out[f"{m}_std"] = g[m].std(ddof=1).fillna(0.0)  # 1 seed -> std NaN -> 0
+    return out.reset_index().sort_values("test_auc_mean", ascending=False).reset_index(drop=True)
 
 
 def aggregate(log_csv: str, out_dir: str) -> pd.DataFrame:

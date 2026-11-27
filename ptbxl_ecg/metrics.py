@@ -13,18 +13,43 @@ def per_class_auc(y: np.ndarray, p: np.ndarray) -> list[float]:
     Trả về list K số float. Lớp mà y chỉ có một giá trị (toàn 0 hoặc toàn 1) thì không tính được AUC:
     trả về NaN cho lớp đó. Gợi ý: sklearn.metrics.roc_auc_score.
     """
-    raise NotImplementedError("TODO [A]: AUC theo lớp, NaN nếu lớp không đủ cả hai nhãn")
+    y, p = np.asarray(y), np.asarray(p)
+    out = []
+    for k in range(y.shape[1]):
+        if len(np.unique(y[:, k])) < 2:
+            out.append(float("nan"))
+        else:
+            out.append(float(roc_auc_score(y[:, k], p[:, k])))
+    return out
 
 
 def macro_auc(y: np.ndarray, p: np.ndarray) -> float:
     """Trung bình AUC các lớp, bỏ qua lớp NaN. Nếu mọi lớp đều NaN thì trả về NaN (float).
     """
-    raise NotImplementedError("TODO [A]: macro-AUC (nanmean của per_class_auc)")
+    a = np.array(per_class_auc(y, p), dtype=float)
+    if np.isnan(a).all():  # tránh RuntimeWarning "Mean of empty slice" của nanmean
+        return float("nan")
+    return float(np.nanmean(a))
+
+
+THRESHOLD_GRID = np.round(np.arange(0.05, 0.951, 0.01), 2)
 
 
 def best_thresholds(y_val: np.ndarray, p_val: np.ndarray) -> np.ndarray:
     """Với mỗi lớp chọn ngưỡng cho F1 cao nhất trên tập validation."""
-    raise NotImplementedError("TODO [A]: chọn ngưỡng tối ưu F1 theo từng lớp trên tập validation")
+    y = np.asarray(y_val).astype(bool)
+    p = np.asarray(p_val)
+    thr = np.empty(y.shape[1])
+    for k in range(y.shape[1]):
+        # Tính F1 cho mọi ngưỡng trên lưới cùng lúc: pred có shape (N, số ngưỡng)
+        pred = p[:, k, None] >= THRESHOLD_GRID[None, :]
+        tp = (pred & y[:, k, None]).sum(0)
+        fp = (pred & ~y[:, k, None]).sum(0)
+        fn = (~pred & y[:, k, None]).sum(0)
+        denom = 2 * tp + fp + fn
+        f1 = np.where(denom > 0, 2 * tp / np.maximum(denom, 1), 0.0)
+        thr[k] = THRESHOLD_GRID[int(np.argmax(f1))]  # hòa thì lấy ngưỡng nhỏ nhất
+    return thr
 
 
 def f1_per_class(y: np.ndarray, p: np.ndarray, thr: np.ndarray) -> list[float]:
@@ -32,7 +57,9 @@ def f1_per_class(y: np.ndarray, p: np.ndarray, thr: np.ndarray) -> list[float]:
 
     Trả về list K số float; dùng zero_division=0 để lớp không có mẫu dương không gây lỗi.
     """
-    raise NotImplementedError("TODO [A]: F1 theo lớp với ngưỡng cho trước")
+    y, p = np.asarray(y), np.asarray(p)
+    return [float(f1_score(y[:, k], (p[:, k] >= thr[k]).astype(int), zero_division=0))
+            for k in range(y.shape[1])]
 
 
 def summarize(y_val, p_val, y_test, p_test) -> dict:
